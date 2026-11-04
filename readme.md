@@ -116,3 +116,122 @@ su implementación para modelado corresponde a una etapa posterior.
 
 El repositorio dispone de developer, certification y master.
 El desarrollo de esta entrega se realiza en developer.
+
+## Punto 2: ingeniería de características y evaluación
+
+### Preparación de datos
+
+Se seleccionaron ocho características iniciales y se crearon
+relacion_cuota_salario y salario_cero.
+
+La selección es provisional y supone que los campos se conocen
+al otorgar el crédito. Los demás datos se excluyeron de esta versión
+hasta confirmar su origen y disponibilidad temporal.
+
+Se aplicaron reglas de limpieza y un pipeline con:
+
+- Imputación por mediana para variables numéricas.
+- Escalamiento de variables numéricas.
+- Categoría de información faltante para variables categóricas.
+- Codificación One-Hot con manejo de categorías desconocidas.
+
+El tratamiento produce 16 columnas en el ajuste con todo el
+entrenamiento. Las categorías disponibles pueden variar entre
+particiones de validación.
+
+### Separación y comparación
+
+Se reservaron 8.610 registros para entrenamiento y 2.153 para prueba,
+mediante una división estratificada con semilla 42.
+
+Los modelos se compararon mediante validación cruzada estratificada
+de cinco particiones dentro del entrenamiento. El pipeline se ajustó
+de nuevo en cada partición para evitar fuga durante la preparación.
+
+Se compararon regresión logística, árbol de decisión y Random Forest,
+junto con una base que siempre predice la clase mayoritaria.
+
+El criterio principal fue el F1 de la clase 0. Se conservaron las
+etiquetas originales; interpretar 0 como incumplimiento requiere
+confirmación con la fuente.
+
+### Resultados de validación
+
+| Modelo | F1 clase 0 | Desviación F1 | Precisión clase 0 | Recall clase 0 |
+|---|---:|---:|---:|---:|
+| Random Forest | 0,1361 | 0,0195 | 0,0960 | 0,2348 |
+| Árbol de decisión | 0,1120 | 0,0071 | 0,0632 | 0,4988 |
+| Regresión logística | 0,1080 | 0,0078 | 0,0607 | 0,4890 |
+| Base mayoritaria | 0,0000 | 0,0000 | 0,0000 | 0,0000 |
+
+Random Forest obtuvo el mayor F1 medio y se seleccionó con ese criterio.
+Sin embargo, presentó una brecha de F1 entre entrenamiento y validación
+de 0,3622, señal de sobreajuste.
+
+El árbol y la regresión logística detectaron más casos de clase 0,
+pero generaron una mayor proporción de alertas incorrectas.
+
+### Evaluación final en prueba
+
+El modelo seleccionado se ajustó con todo el entrenamiento y se
+evaluó en el conjunto de prueba reservado.
+
+| Métrica | Resultado |
+|---|---:|
+| Exactitud | 0,8439 |
+| Exactitud balanceada | 0,5780 |
+| Precisión clase 0 | 0,0993 |
+| Recall clase 0 | 0,2843 |
+| F1 clase 0 | 0,1472 |
+
+De los 102 casos reales de clase 0, identificó 29 y omitió 73.
+Además, clasificó incorrectamente 263 casos de clase 1 como clase 0.
+
+El resultado evidencia una capacidad limitada para detectar la clase
+minoritaria. La selección representa el mejor F1 entre las
+configuraciones evaluadas, no un modelo listo para uso operativo.
+
+### Consistencia y costo computacional
+
+La desviación del F1 entre particiones se utilizó para describir
+la variación del desempeño.
+
+Se registraron tiempos de ajuste y evaluación en comparacion_modelos.csv.
+Random Forest requirió más tiempo de ajuste que el árbol y la
+regresión logística en este equipo.
+
+Estos tiempos corresponden a la base actual y no constituyen una
+prueba de escalabilidad. No se realizaron ensayos con mayores
+volúmenes ni cargas simultáneas.
+
+### Evidencias generadas
+
+- comparacion_modelos.csv: métricas y tiempos de validación.
+- metricas_prueba.json: métricas finales del seleccionado.
+- mejor_modelo.joblib: pipeline de preparación y clasificador.
+- comparacion_f1.png: comparación de F1 en validación.
+- comparacion_sobreajuste.png: F1 de entrenamiento y validación.
+- matriz_confusion_prueba.png: resultados en prueba.
+
+### Ejecución del punto 2
+
+Desde la raíz del repositorio, con el entorno virtual activo:
+
+python mlops_pipeline/ft_eng.py
+python mlops_pipeline/model_evaluation.py
+
+El pipeline guardado requiere conservar el módulo ft_eng.py y
+utilizar un entorno compatible con las versiones del entrenamiento.
+
+### Limitaciones
+
+La división aleatoria no demuestra desempeño sobre créditos futuros.
+Tampoco garantiza separación por cliente, pues no se dispone de un
+identificador confirmado.
+
+El EDA previo utilizó la base completa, por lo que la prueba no es
+totalmente independiente de las decisiones exploratorias. Se requeriría
+una muestra nueva o temporal para una evaluación más rigurosa.
+
+Las reglas de edad y el significado de las variables y del objetivo
+continúan sujetos a validación con la fuente.
