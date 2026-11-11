@@ -399,6 +399,43 @@ def procesar_y_guardar_lote(ruta_actual, referencia):
     )
 
 
+
+def analizar_evolucion(lotes):
+    """Detectar cambios exploratorios entre ejecuciones consecutivas.
+
+    Las fechas son de procesamiento, no de originacion del credito.
+    Los umbrales requieren calibracion antes de uso operativo.
+    """
+    if len(lotes) < 3:
+        return "DATOS_INSUFICIENTES"
+
+    ordenados = lotes.copy()
+    ordenados["fecha_utc"] = pd.to_datetime(
+        ordenados["fecha_utc"], utc=True, errors="raise"
+    )
+    ordenados = ordenados.sort_values("fecha_utc")
+    valores = pd.to_numeric(
+        ordenados["variables_alerta"], errors="raise"
+    ).tail(3)
+
+    if valores.isna().any() or (valores < 0).any():
+        raise ValueError("El historial contiene cantidades invalidas.")
+
+    diferencias = valores.diff().dropna()
+
+    # Salto de al menos dos variables con alerta entre los ultimos lotes.
+    if abs(diferencias.iloc[-1]) >= 2:
+        return "CAMBIO_ABRUPTO"
+
+    # Tres lotes consecutivos con crecimiento o disminucion estricta.
+    if diferencias.gt(0).all():
+        return "TENDENCIA_CRECENTE"
+    if diferencias.lt(0).all():
+        return "TENDENCIA_DECRECIENTE"
+
+    return "SIN_TENDENCIA_DETECTADA"
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Monitoreo de lotes de créditos."

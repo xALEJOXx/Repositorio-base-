@@ -534,3 +534,26 @@ El token se almacena como secreto `SONAR_TOKEN` en GitHub.
 - El análisis de SonarCloud todavía debe verificarse.
 
 El proyecto es una implementación académica y no constituye un sistema operativo de aprobación de créditos.
+
+## Actualizacion final de validacion
+
+Esta seccion actualiza los estados y porcentajes anteriores.
+
+- 33 pruebas locales aprobadas.
+- Cobertura total local: 76 %.
+- API: 100 %. Streamlit: 85 %. Monitoreo: 79 %.
+- Entrenamiento: 79 %. Preparacion de variables: 68 %.
+- generar_lock.py: 0 % de cobertura automatizada.
+- Ultimo Quality Gate comprobado: Passed.
+- Cobertura del codigo nuevo en ese analisis: 83,01 %.
+- Incidencias nuevas: 0. Duplicacion: 0 %.
+- La version con deteccion temporal requiere un nuevo analisis.
+
+Se implemento deteccion exploratoria sobre los tres ultimos lotes,
+ordenados por fecha de ejecucion. Se detectan incrementos o disminuciones
+consecutivas del numero de variables con alerta. Un salto de al menos
+dos variables entre los dos ultimos lotes se clasifica como cambio abrupto
+y tiene prioridad. Con menos de tres lotes se informa datos insuficientes.
+
+Estas reglas requieren calibracion. Las fechas son de procesamiento,
+no de originacion de los creditos. Los lotes simulados son demostraciones.

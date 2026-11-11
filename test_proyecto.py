@@ -503,3 +503,27 @@ def test_streamlit_demostracion_e_historial(
     )
     boton.click().run()
     assert not simulacion.exception
+
+@pytest.mark.parametrize(
+    "valores,esperado",
+    [
+        ([0, 1], "DATOS_INSUFICIENTES"),
+        ([0, 1, 2], "TENDENCIA_CRECENTE"),
+        ([2, 1, 0], "TENDENCIA_DECRECIENTE"),
+        ([0, 1, 4], "CAMBIO_ABRUPTO"),
+        ([4, 3, 0], "CAMBIO_ABRUPTO"),
+        ([1, 1, 1], "SIN_TENDENCIA_DETECTADA"),
+    ],
+)
+def test_evolucion_del_historial(valores, esperado):
+    """Verificar tendencias, cambios abruptos y datos insuficientes."""
+    lotes = pd.DataFrame({
+        "fecha_utc": pd.date_range(
+            "2026-01-01", periods=len(valores), tz="UTC"
+        ),
+        "variables_alerta": valores,
+    })
+
+    # La funcion debe ordenar las ejecuciones por su fecha.
+    resultado = monitoreo.analizar_evolucion(lotes.iloc[::-1])
+    assert resultado == esperado

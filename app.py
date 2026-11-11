@@ -22,6 +22,7 @@ sys.path.insert(0, str(ROOT / "mlops_pipeline"))
 
 from ft_engineering import VARIABLES_BASE, cargar_y_separar_datos
 from model_monitoring import (
+    analizar_evolucion,
     CATEGORICAS,
     analizar_drift,
     preparar_serie,
@@ -313,6 +314,15 @@ with pestana_hist:
                         "Se necesitan varios lotes distintos para "
                         "observar evolución. Una línea de alertas "
                         "no demuestra por sí sola una tendencia."
+                    )
+
+                    # Revisar la secuencia de lotes, ademas del drift individual.
+                    estado_temporal = analizar_evolucion(lotes)
+                    st.write("Analisis automatico del historial:", estado_temporal)
+                    st.caption(
+                        "Reglas exploratorias: tres lotes para tendencia; "
+                        "salto de dos variables con alerta para cambio abrupto. "
+                        "Se analizan ejecuciones, no fechas de los creditos."
                     )
 
                     lote_id = st.selectbox(
