@@ -236,10 +236,30 @@ def crear_tablas(conexion):
 
 
 def procesar_y_guardar_lote(ruta_actual, referencia):
-    """Guarda cada contenido nuevo con sus predicciones y métricas."""
+    """Valida el CSV y guarda sus predicciones y métricas."""
 
+    # Solo permitir archivos CSV dentro de la carpeta del proyecto.
+    # resolve() también resuelve ".." y enlaces simbólicos.
+    carpeta_permitida = ROOT.resolve()
     ruta_actual = Path(ruta_actual)
-    ruta_bd = ROOT / "monitoreo.sqlite"
+
+    if not ruta_actual.is_absolute():
+        ruta_actual = carpeta_permitida / ruta_actual
+
+    ruta_actual = ruta_actual.resolve()
+
+    if not ruta_actual.is_relative_to(carpeta_permitida):
+        raise ValueError(
+            "El lote debe estar dentro de la carpeta del proyecto."
+        )
+
+    if ruta_actual.suffix.lower() != ".csv":
+        raise ValueError("El lote debe ser un archivo CSV.")
+
+    if not ruta_actual.is_file():
+        raise ValueError("El archivo CSV indicado no existe.")
+
+    ruta_bd = carpeta_permitida / "monitoreo.sqlite"
 
     # Leer una sola versión del lote y del modelo.
     contenido = ruta_actual.read_bytes()

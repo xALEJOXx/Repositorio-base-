@@ -219,3 +219,39 @@ def test_guardado_lote_sin_duplicados(tmp_path, monkeypatch, credito):
     assert cantidad_metricas == 8
     assert registro["prediccion"] in [0, 1]
     assert 0 <= registro["probabilidad_clase_0"] <= 1
+
+@pytest.mark.parametrize("ruta_absoluta", [False, True])
+def test_monitoreo_rechaza_ruta_externa(
+    tmp_path, monkeypatch, credito, ruta_absoluta
+):
+    """Rechazar rutas externas aunque el CSV exista."""
+    carpeta_proyecto = tmp_path / "proyecto"
+    carpeta_proyecto.mkdir()
+    monkeypatch.setattr(monitoreo, "ROOT", carpeta_proyecto)
+
+    referencia = pd.DataFrame([credito] * 30)
+    archivo_externo = tmp_path / "externo.csv"
+    referencia.to_csv(archivo_externo, index=False)
+
+    ruta = archivo_externo if ruta_absoluta else "../externo.csv"
+
+    with pytest.raises(ValueError, match="dentro de la carpeta"):
+        monitoreo.procesar_y_guardar_lote(ruta, referencia)
+
+    # El rechazo debe ocurrir antes de crear la base de datos.
+    assert not (carpeta_proyecto / "monitoreo.sqlite").exists()
+
+
+def test_monitoreo_rechaza_archivo_no_csv(
+    tmp_path, monkeypatch, credito
+):
+    """Evitar procesar archivos con otra extensión."""
+    monkeypatch.setattr(monitoreo, "ROOT", tmp_path)
+    archivo = tmp_path / "datos.txt"
+    archivo.write_text("contenido de prueba", encoding="utf-8")
+    referencia = pd.DataFrame([credito] * 30)
+
+    with pytest.raises(ValueError, match="archivo CSV"):
+        monitoreo.procesar_y_guardar_lote(archivo, referencia)
+
+    assert not (tmp_path / "monitoreo.sqlite").exists()

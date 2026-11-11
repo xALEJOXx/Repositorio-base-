@@ -9,8 +9,9 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /app
 
 # Instalar las dependencias de ejecución.
-COPY requirements-runtime.txt .
-RUN python -m pip install --no-cache-dir -r requirements-runtime.txt
+# Instalar versiones bloqueadas y verificar la integridad de los paquetes.
+COPY requirements-runtime.lock .
+RUN python -m pip install --no-cache-dir --require-hashes --only-binary=:all: -r requirements-runtime.lock
 
 # Copiar el código, los datos de referencia y el modelo.
 COPY mlops_pipeline/ ./mlops_pipeline/
