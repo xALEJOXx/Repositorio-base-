@@ -24,7 +24,7 @@ from sklearn.model_selection import StratifiedKFold, cross_validate
 from sklearn.pipeline import Pipeline
 from sklearn.tree import DecisionTreeClassifier
 
-from ft_eng import (
+from ft_engineering import (
     cargar_y_separar_datos,
     crear_pipeline_preparacion,
 )

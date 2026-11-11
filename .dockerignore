@@ -1,0 +1,16 @@
+.git/
+.venv/
+**/__pycache__/
+**/*.pyc
+.ipynb_checkpoints/
+**/.ipynb_checkpoints/
+.env
+.env.*
+*.xlsx
+monitoreo.sqlite*
+historial_drift.csv
+lote_actual.csv
+lote_simulado.csv
+.coverage
+htmlcov/
+.pytest_cache/

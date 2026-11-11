@@ -1,0 +1,44 @@
+name: Pruebas y SonarCloud
+
+on:
+  push:
+    branches:
+      - developer
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  analizar:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Descargar repositorio
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Preparar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Instalar dependencias
+        run: |
+          python -m pip install -r requirements-runtime.txt
+          python -m pip install pytest pytest-cov httpx
+
+      - name: Ejecutar pruebas y generar cobertura
+        run: |
+          python -m pytest test_proyecto.py -v --cov --cov-report=term-missing --cov-report=xml:coverage.xml
+
+      - name: Analizar en SonarCloud
+        uses: SonarSource/sonarqube-scan-action@v8.3.0
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: https://sonarcloud.io
+        with:
+          args: >
+            -Dsonar.branch.name=developer
+            

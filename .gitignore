@@ -5,3 +5,13 @@ __pycache__/
 *.pyc
 ~$*
 BD_creditos*.xlsx
+monitoreo.sqlite
+monitoreo.sqlite-*
+lote_actual.csv
+lote_simulado.csv
+historial_drift.csv
+.coverage
+coverage.xml
+htmlcov/
+.pytest_cache/
+.scannerwork/

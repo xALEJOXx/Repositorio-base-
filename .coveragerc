@@ -1,0 +1,9 @@
+[run]
+relative_files = True
+source = .
+omit =
+    .venv/*
+    test_proyecto.py
+
+[report]
+show_missing = True
