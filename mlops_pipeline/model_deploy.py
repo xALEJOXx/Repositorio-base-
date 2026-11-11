@@ -52,13 +52,17 @@ class SolicitudPrediccion(BaseModel):
 
 @asynccontextmanager
 async def lifespan(app):
-    # Cargar una sola vez al iniciar el servidor.
-    # No se aceptan modelos enviados por los usuarios.
+    """Cargar el modelo al iniciar y liberarlo al cerrar."""
+
     app.state.modelo = joblib.load(
         ROOT / "mejor_modelo.joblib"
     )
-    yield
-    app.state.modelo = None
+
+    try:
+        yield
+    finally:
+        # Liberar el modelo incluso si ocurre una excepcion.
+        app.state.modelo = None
 
 
 app = FastAPI(

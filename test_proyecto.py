@@ -255,3 +255,251 @@ def test_monitoreo_rechaza_archivo_no_csv(
         monitoreo.procesar_y_guardar_lote(archivo, referencia)
 
     assert not (tmp_path / "monitoreo.sqlite").exists()
+
+def test_health_sin_modelo_devuelve_503(client, monkeypatch):
+    """Informar cuando el modelo no esta disponible."""
+    monkeypatch.setattr(app.state, "modelo", None)
+
+    respuesta = client.get("/health")
+
+    assert respuesta.status_code == 503
+    assert respuesta.json()["detail"] == "Modelo no disponible."
+
+def test_lifespan_libera_modelo_al_cerrar():
+    """Liberar el modelo al terminar el contexto del servidor."""
+    with TestClient(app) as cliente:
+        assert cliente.get("/health").status_code == 200
+        assert app.state.modelo is not None
+
+    assert app.state.modelo is None
+
+def test_lifespan_libera_modelo_ante_error():
+    """Una excepcion no debe impedir la limpieza."""
+    with pytest.raises(RuntimeError, match="Error simulado"):
+        with TestClient(app):
+            assert app.state.modelo is not None
+            raise RuntimeError("Error simulado")
+
+    assert app.state.modelo is None
+
+def test_metricas_clase_minoritaria():
+    """Verificar las metricas con resultados calculables a mano."""
+    import model_training_evaluation as entrenamiento
+
+    metricas = entrenamiento.summarize_classification(
+        [0, 0, 1, 1],
+        [0, 1, 1, 1],
+    )
+
+    assert metricas["accuracy"] == pytest.approx(0.75)
+    assert metricas["balanced_accuracy"] == pytest.approx(0.75)
+    assert metricas["precision_clase_0"] == pytest.approx(1.0)
+    assert metricas["recall_clase_0"] == pytest.approx(0.5)
+    assert metricas["f1_clase_0"] == pytest.approx(2 / 3)
+
+
+def test_comparacion_y_guardado_temporal(tmp_path, monkeypatch, credito):
+    """Comparar modelos y verificar sus archivos sin tocar los reales."""
+    import joblib
+    import model_training_evaluation as entrenamiento
+    from sklearn.dummy import DummyClassifier
+
+    # Datos sinteticos exclusivos para probar el funcionamiento.
+    registros = [
+        {
+            **credito,
+            "capital_prestado": 1000000 + i * 20000,
+            "edad_cliente": 25 + i % 40,
+            "salario_cliente": 2000000 + i * 10000,
+            "tipo_laboral": "Empleado" if i % 2 else "Independiente",
+        }
+        for i in range(60)
+    ]
+    entradas = pd.DataFrame(registros)
+    etiquetas = pd.Series([0 if i % 4 == 0 else 1 for i in range(60)])
+
+    resumen = entrenamiento.comparar_modelos(entradas, etiquetas)
+
+    assert set(resumen["modelo"]) == {
+        "Base_mayoritaria",
+        "Regresion_logistica",
+        "Arbol_decision",
+        "Random_forest",
+    }
+    assert len(resumen) == 4
+    assert resumen["f1_clase_0_cv"].is_monotonic_decreasing
+
+    columnas_metricas = [
+        "f1_clase_0_cv",
+        "precision_clase_0_cv",
+        "recall_clase_0_cv",
+        "balanced_accuracy_cv",
+        "accuracy_cv",
+    ]
+
+    for columna in columnas_metricas:
+        assert resumen[columna].between(0, 1).all()
+
+    assert np.isfinite(
+        resumen.select_dtypes(include="number").to_numpy()
+    ).all()
+
+    base = resumen.set_index("modelo").loc["Base_mayoritaria"]
+    assert base["f1_clase_0_cv"] == pytest.approx(0)
+    assert base["accuracy_cv"] == pytest.approx(0.75)
+
+    # Usar un modelo sencillo para comprobar la persistencia.
+    modelo = entrenamiento.build_model(
+        DummyClassifier(strategy="most_frequent", random_state=42)
+    )
+    modelo.fit(entradas, etiquetas)
+    predicciones = modelo.predict(entradas)
+    metricas = entrenamiento.summarize_classification(
+        etiquetas, predicciones
+    )
+
+    # guardar_resultados calcula su destino a partir de __file__.
+    # Redirigirlo a una carpeta temporal, sin sobrescribir el proyecto.
+    monkeypatch.setattr(
+        entrenamiento,
+        "__file__",
+        str(tmp_path / "mlops_pipeline" / "model_training_evaluation.py"),
+    )
+
+    entrenamiento.guardar_resultados(
+        resumen, modelo, metricas, etiquetas, predicciones
+    )
+
+    tabla = pd.read_csv(tmp_path / "comparacion_modelos.csv")
+    assert tabla["modelo"].tolist() == resumen["modelo"].tolist()
+
+    guardadas = json.loads(
+        (tmp_path / "metricas_prueba.json").read_text(encoding="utf-8")
+    )
+    assert guardadas == pytest.approx(metricas)
+
+    recuperado = joblib.load(tmp_path / "mejor_modelo.joblib")
+    np.testing.assert_array_equal(
+        recuperado.predict(entradas), predicciones
+    )
+
+    for nombre in [
+        "comparacion_f1.png",
+        "comparacion_sobreajuste.png",
+        "matriz_confusion_prueba.png",
+    ]:
+        imagen = tmp_path / nombre
+        assert imagen.read_bytes().startswith(b"\x89PNG\r\n\x1a\n")
+        assert imagen.stat().st_size > 1000
+
+@pytest.mark.parametrize(
+    "estado_historial",
+    ["inexistente", "vacio", "con_datos", "danado"],
+)
+def test_streamlit_demostracion_e_historial(
+    tmp_path, monkeypatch, estado_historial
+):
+    """Probar predicciones, graficas e historial sin tocar la base real."""
+    from streamlit.testing.v1 import AppTest
+    from ft_engineering import cargar_y_separar_datos
+
+    ruta_bd = tmp_path / "historial_prueba.sqlite"
+    monkeypatch.setenv("CREDITOS_HISTORIAL_DB", str(ruta_bd))
+
+    if estado_historial == "danado":
+        ruta_bd.write_bytes(b"Esto no es una base SQLite")
+    elif estado_historial != "inexistente":
+        with closing(sqlite3.connect(ruta_bd)) as conexion, conexion:
+            monitoreo.crear_tablas(conexion)
+
+            if estado_historial == "con_datos":
+                conexion.execute(
+                    "INSERT INTO lotes VALUES (?, ?, ?, ?, ?)",
+                    ("lote-prueba", "firma-prueba", "2026-11-01T12:00:00Z", 1, 0),
+                )
+                conexion.execute(
+                    "INSERT INTO drift VALUES (?, ?, ?, ?)",
+                    (
+                        "lote-prueba",
+                        "capital_prestado",
+                        "SIN_ALERTA",
+                        json.dumps({
+                            "variable": "capital_prestado",
+                            "estado": "SIN_ALERTA",
+                            "psi": 0.0,
+                        }),
+                    ),
+                )
+                conexion.execute(
+                    "INSERT INTO predicciones VALUES (?, ?, ?)",
+                    (
+                        "lote-prueba",
+                        0,
+                        json.dumps({
+                            "capital_prestado": 2000000,
+                            "prediccion": 1,
+                            "probabilidad_clase_0": 0.2,
+                        }),
+                    ),
+                )
+
+    simulacion = AppTest.from_file(
+        str(ROOT / "app.py"), default_timeout=60
+    ).run()
+
+    assert not simulacion.exception
+    assert len(simulacion.title) == 1
+    assert len(simulacion.tabs) == 3
+
+    _, prueba, _, _ = cargar_y_separar_datos()
+    assert int(simulacion.metric[0].value) == len(prueba)
+
+    # Verificar las predicciones mostradas y sus probabilidades.
+    salida = simulacion.dataframe[0].value
+    assert len(salida) == min(100, len(prueba))
+    assert salida["prediccion"].isin([0, 1]).all()
+    assert salida["probabilidad_modelo_clase_0"].between(0, 1).all()
+
+    mensajes = [elemento.value for elemento in simulacion.info]
+
+    if estado_historial == "inexistente":
+        assert any("no existe historial" in mensaje for mensaje in mensajes)
+        assert not ruta_bd.exists()
+    elif estado_historial == "vacio":
+        assert any("No hay lotes registrados" in mensaje for mensaje in mensajes)
+    elif estado_historial == "danado":
+        assert any(
+            "No se pudo consultar el historial" in elemento.value
+            for elemento in simulacion.error
+        )
+    else:
+        tablas = [elemento.value for elemento in simulacion.dataframe]
+        tabla_lotes = next(tabla for tabla in tablas if "id" in tabla.columns)
+        assert tabla_lotes["id"].tolist() == ["lote-prueba"]
+
+        tabla_predicciones = next(
+            tabla for tabla in tablas
+            if "probabilidad_clase_0" in tabla.columns
+        )
+        assert tabla_predicciones.iloc[0]["prediccion"] == 1
+
+        with closing(sqlite3.connect(ruta_bd)) as conexion:
+            assert conexion.execute(
+                "SELECT COUNT(*) FROM lotes"
+            ).fetchone()[0] == 1
+
+    # Cambiar de grafica categorica a numerica.
+    selector = next(
+        elemento for elemento in simulacion.selectbox
+        if elemento.label == "Variable para comparar"
+    )
+    selector.select("capital_prestado").run()
+    assert not simulacion.exception
+
+    # Verificar que actualizar el historial no provoque excepciones.
+    boton = next(
+        elemento for elemento in simulacion.button
+        if elemento.label == "Actualizar historial"
+    )
+    boton.click().run()
+    assert not simulacion.exception

@@ -5,6 +5,7 @@ Permite cargar un CSV, generar predicciones y comparar su población
 con los datos de entrenamiento. No toma decisiones de aprobación.
 """
 import json
+import os
 import sqlite3
 import sys
 from pathlib import Path
@@ -264,7 +265,12 @@ with pestana_hist:
     # Al pulsar el botón, Streamlit vuelve a consultar la base.
     st.button("Actualizar historial")
 
-    ruta_bd = ROOT / "monitoreo.sqlite"
+    ruta_bd = Path(
+        os.environ.get(
+            "CREDITOS_HISTORIAL_DB",
+            str(ROOT / "monitoreo.sqlite"),
+        )
+    )
 
     if not ruta_bd.exists():
         st.info(

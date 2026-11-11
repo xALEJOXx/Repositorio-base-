@@ -58,7 +58,8 @@ def comparar_modelos(X_train, y_train):
     # El modelo base permite comprobar si los demás aportan valor.
     modelos = {
         "Base_mayoritaria": DummyClassifier(
-            strategy="most_frequent"
+            strategy="most_frequent",
+            random_state=42,
         ),
         "Regresion_logistica": LogisticRegression(
             class_weight="balanced",
