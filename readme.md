@@ -39,7 +39,8 @@ Esta interpretación y el periodo de pago evaluado deben confirmarse con la fuen
 | `app.py` | Aplicación Streamlit |
 | `setup.bat` | Preparación del entorno en Windows |
 | `requirements.txt` | Dependencias registradas del entorno de desarrollo |
-| `requirements-runtime.txt` | Versiones de dependencias utilizadas en ejecución y Docker |
+| `requirements-runtime.txt` | Dependencias directas de ejecución |
+| `requirements-runtime.lock` | Dependencias bloqueadas con hashes para Docker |
 | `Dockerfile` | Construcción de la imagen de la API |
 | `.dockerignore` | Exclusiones del contexto de construcción |
 | `test_proyecto.py` | Pruebas automatizadas |
@@ -332,7 +333,7 @@ Cada contenido nuevo se registra en `monitoreo.sqlite` con:
 
 La firma combina el contenido del CSV, el modelo y los datos de referencia. Si coinciden con un lote ya procesado, no se duplica.
 
-Las fechas representan ejecuciones del monitoreo, no fechas de originación de los créditos. El historial muestra alertas por lote y no incorpora un detector automático de tendencias.
+Las fechas representan ejecuciones del monitoreo, no fechas de originación de los créditos. Se incorporó detección exploratoria de tendencias y cambios abruptos sobre los tres últimos lotes; las reglas se detallan en el reporte de resultados.
 
 La base SQLite y los lotes locales están excluidos de Git.
 
@@ -413,39 +414,39 @@ Solo se carga el modelo local del proyecto; no se aceptan archivos de modelos en
 
 ### Docker
 
-La imagen utiliza Python 3.13 y las versiones registradas en `requirements-runtime.txt`.
+La imagen utiliza Python 3.13 e instala `requirements-runtime.lock` con `--require-hashes` y `--only-binary=:all:`. El bloqueo generado contiene 53 paquetes. Esto fija versiones y verifica los archivos descargados; no garantiza por sí solo ausencia de vulnerabilidades.
 
 Con Docker Desktop iniciado, construir:
 
 ```powershell
-docker build -t creditos-ml:1.0 .
+docker build -t creditos-ml:1.1 .
 ```
 
 Crear e iniciar el contenedor:
 
 ```powershell
-docker run -d --name creditos-api -p 127.0.0.1:8001:8000 creditos-ml:1.0
+docker run -d --name creditos-api-prueba -p 127.0.0.1:8002:8000 creditos-ml:1.1
 ```
 
-Documentación de la API: http://127.0.0.1:8001/docs
+Documentación de la API: http://127.0.0.1:8002/docs
 
 Si el contenedor ya existe y está detenido:
 
 ```powershell
-docker start creditos-api
+docker start creditos-api-prueba
 ```
 
 Consultar estado y registros:
 
 ```powershell
 docker ps
-docker logs creditos-api
+docker logs creditos-api-prueba
 ```
 
 Detener:
 
 ```powershell
-docker stop creditos-api
+docker stop creditos-api-prueba
 ```
 
 La API se ejecuta con un usuario sin privilegios. El contenedor incluye una comprobación periódica de `/health`.
@@ -474,23 +475,9 @@ Ejecutar:
 .\.venv\Scripts\python.exe -m pytest test_proyecto.py -v --cov --cov-report=term-missing --cov-report=xml:coverage.xml
 ```
 
-La última ejecución local comprobada aprobó **15 pruebas**.
+La última ejecución local documentada aprobó **33 pruebas**, con una advertencia, en **21,41 segundos**. La cobertura total fue **76 %**. El detalle aparece en el reporte de resultados al final de este README.
 
-La medición anterior, limitada a `mlops_pipeline`, obtuvo:
-
-| Módulo | Cobertura |
-|---|---:|
-| Ingeniería de características | 54 % |
-| API | 98 % |
-| Monitoreo | 75 % |
-| Entrenamiento y evaluación | 0 % |
-| Total de esa medición | 54 % |
-
-La configuración actual también contempla `app.py`, por lo que el porcentaje puede diferir. No se afirma cobertura completa del entrenamiento ni de la interfaz.
-
-Se corrigieron los avisos de conexiones SQLite abiertas. Permanece un aviso de deprecación de Starlette/httpx que no impidió aprobar las pruebas.
-
-`coverage.xml` se genera al ejecutar las pruebas y no se guarda en Git.
+Permanece un aviso de deprecación de Starlette/httpx que no impidió aprobar las pruebas. `coverage.xml` se genera al ejecutar la suite y no se guarda en Git.
 
 ## Análisis de calidad con SonarCloud
 
@@ -517,7 +504,9 @@ sonar.organization=xalejoxx
 
 El token se almacena como secreto `SONAR_TOKEN` en GitHub.
 
-**Estado al documentar:** configuración publicada y ejecución en cola en GitHub Actions. La recepción del análisis, sus hallazgos y el resultado del Quality Gate están pendientes de verificar.
+**Último resultado documentado:** Quality Gate aprobado, 83,01 % de cobertura del código nuevo, cero incidencias nuevas y 0 % de duplicación. Esa captura es anterior a la incorporación temporal; debe revisarse un análisis posterior para afirmar el estado de esos últimos cambios.
+
+El workflow actual ejecuta el scanner, pero no espera explícitamente el resultado del Quality Gate. Una ejecución verde de Actions no sustituye la consulta del panel de SonarCloud.
 
 ## Limitaciones
 
@@ -528,32 +517,137 @@ El token se almacena como secreto `SONAR_TOKEN` en GitHub.
 - Random Forest presenta desempeño limitado en la clase minoritaria y señales de sobreajuste.
 - Las probabilidades no están calibradas.
 - El monitoreo se comprobó con datos históricos y un cambio simulado, no con lotes nuevos de producción.
-- El historial conserva ejecuciones, pero no implementa detección automática de tendencias temporales.
+- La detección temporal utiliza tres ejecuciones y reglas exploratorias que requieren calibración.
 - No se realizaron pruebas de carga o escalabilidad.
 - La API aplica reglas de entrada más estrictas que la limpieza interna del pipeline.
-- El análisis de SonarCloud todavía debe verificarse.
+- El último Quality Gate documentado debe actualizarse para incluir los cambios temporales posteriores.
+- La revisión periódica requiere mantener el proceso y el equipo encendidos; no se configuró como servicio permanente.
 
 El proyecto es una implementación académica y no constituye un sistema operativo de aprobación de créditos.
 
-## Actualizacion final de validacion
+## Reporte de resultados y evidencias
 
-Esta seccion actualiza los estados y porcentajes anteriores.
+### Valores principales del experimento
 
-- 33 pruebas locales aprobadas.
-- Cobertura total local: 76 %.
-- API: 100 %. Streamlit: 85 %. Monitoreo: 79 %.
-- Entrenamiento: 79 %. Preparacion de variables: 68 %.
-- generar_lock.py: 0 % de cobertura automatizada.
-- Ultimo Quality Gate comprobado: Passed.
-- Cobertura del codigo nuevo en ese analisis: 83,01 %.
-- Incidencias nuevas: 0. Duplicacion: 0 %.
-- La version con deteccion temporal requiere un nuevo analisis.
+| Dato | Valor | Lectura del resultado |
+|---|---:|---|
+| Registros originales | 10.763 | Base utilizada para el ejercicio |
+| Variables originales | 23 | Se seleccionaron ocho entradas para modelado |
+| Clase 0 | 511, aproximadamente 4,75 % | Es la clase minoritaria |
+| Clase 1 | 10.252, aproximadamente 95,25 % | Domina el conjunto de datos |
+| Entrenamiento | 8.610 | Comparación con validación cruzada de cinco particiones |
+| Prueba | 2.153 | Evaluación del modelo seleccionado |
+| Semilla | 42 | Permite repetir la separación aleatoria |
 
-Se implemento deteccion exploratoria sobre los tres ultimos lotes,
-ordenados por fecha de ejecucion. Se detectan incrementos o disminuciones
-consecutivas del numero de variables con alerta. Un salto de al menos
-dos variables entre los dos ultimos lotes se clasifica como cambio abrupto
-y tiene prioridad. Con menos de tres lotes se informa datos insuficientes.
+Random Forest obtuvo el mayor F1 medio de clase 0 en validación, **0,1361**. Sin embargo, la brecha entre entrenamiento y validación fue **0,3622**, señal de sobreajuste. La selección es relativa a los modelos probados; no significa que el desempeño sea suficiente para el negocio.
 
-Estas reglas requieren calibracion. Las fechas son de procesamiento,
-no de originacion de los creditos. Los lotes simulados son demostraciones.
+En prueba detectó **29 de 102 casos de clase 0** y omitió 73. Además, generó 263 predicciones de clase 0 sobre registros de clase 1. El recall de clase 0 fue **28,43 %**, la precisión **9,93 %** y el F1 **0,1472**. La matriz y las métricas completas se incluyen en la sección de entrenamiento.
+
+### Comprobación del monitoreo
+
+| Comprobación realizada | Resultado observado | Alcance |
+|---|---|---|
+| Entrenamiento frente a 2.153 registros de prueba | Cero variables con alerta | Comparación histórica, sin separación temporal |
+| Copia con `capital_prestado` multiplicado por diez | Una variable con alerta | Cambio simulado para verificar la respuesta |
+| Repetir el mismo lote, modelo y referencia | No duplicar el registro | La firma combina CSV, modelo y referencia |
+| Archivo fuera de la carpeta del proyecto o sin extensión CSV | Rechazo | Validación de la ruta antes de leer el lote |
+
+El código sí incluye revisión periódica mediante `--intervalo 60`. Se ejecuta mientras el proceso permanezca abierto. Como mejora operativa queda instalarlo como servicio o tarea administrada.
+
+Si hay alertas, el proceso recomienda revisar calidad, origen y población, y evaluar el desempeño con etiquetas antes de reentrenar. El sistema no reentrena automáticamente.
+
+### Reglas de evolución temporal
+
+La función `analizar_evolucion` ordena los lotes por `fecha_utc` y revisa los tres últimos valores de `variables_alerta`.
+
+| Condición | Estado |
+|---|---|
+| Menos de tres lotes | `DATOS_INSUFICIENTES` |
+| Diferencia absoluta de al menos dos variables entre los dos últimos lotes | `CAMBIO_ABRUPTO` |
+| Dos incrementos consecutivos | `TENDENCIA_CRECIENTE` |
+| Dos disminuciones consecutivas | `TENDENCIA_DECRECIENTE` |
+| Ninguna de las anteriores | `SIN_TENDENCIA_DETECTADA` |
+
+El cambio abrupto tiene prioridad. Por ejemplo, 0, 1, 2 indica crecimiento y 0, 1, 4 indica cambio abrupto. Son ejemplos de las reglas, no observaciones de producción. Las fechas corresponden al procesamiento de los lotes.
+
+### Evidencia de pruebas locales
+
+Salida final registrada: **33 passed, 1 warning in 21.41s**. Entorno reportado: Windows y Python 3.13.12.
+
+| Componente | Sentencias | Sin ejecutar | Cobertura |
+|---|---:|---:|---:|
+| `app.py` | 144 | 22 | 85 % |
+| `generar_lock.py` | 31 | 31 | 0 % |
+| `mlops_pipeline/__init__.py` | 0 | 0 | 100 % |
+| Ingeniería de características | 74 | 24 | 68 % |
+| API | 46 | 0 | 100 % |
+| Monitoreo | 194 | 41 | 79 % |
+| Entrenamiento y evaluación | 98 | 21 | 79 % |
+| **Total** | **587** | **139** | **76 %** |
+
+Los porcentajes están redondeados como en pytest. Un archivo con cero sentencias no aporta validaciones adicionales. La cobertura mide código ejecutado y no garantiza por sí sola que todos los comportamientos estén verificados.
+
+La suite se amplió para comprobar rutas externas, archivos no CSV, disponibilidad sin modelo, limpieza al cerrar o ante errores, evaluación y guardado temporal, estados del historial de Streamlit y reglas de evolución. Los datos sintéticos y las bases temporales de las pruebas no sustituyen el modelo ni el historial real.
+
+### Evidencia del análisis estático
+
+| Indicador | Último valor comprobado |
+|---|---:|
+| Quality Gate | Passed |
+| Cobertura del código nuevo | 83,01 % |
+| Mínimo exigido en ese análisis | 80 % |
+| Incidencias nuevas | 0 |
+| Duplicación del código nuevo | 0,0 % |
+
+Estos valores corresponden a la captura anterior a los últimos cambios temporales. El **76 % local** es cobertura total; el **83,01 % de SonarCloud** es cobertura del código nuevo y corresponde a otro momento. No son la misma medición.
+
+### Correcciones realizadas
+
+| Problema observado | Motivo | Cambio aplicado |
+|---|---|---|
+| SonarCloud rechazó el análisis de CI | Automatic Analysis estaba habilitado al mismo tiempo | Se desactivó el análisis automático y se conservó GitHub Actions |
+| Riesgo de lectura de rutas externas | El monitoreo recibía una ruta de archivo | Se resuelve la ruta y se exige ubicación dentro del proyecto y extensión CSV |
+| Dependencias de Docker sin bloqueo completo | La instalación podía resolver versiones diferentes | Lock con versiones, hashes y paquetes binarios |
+| Limpieza del modelo ante una excepción | El cierre debía liberar el recurso incluso con errores | Limpieza con `try/finally` y pruebas del ciclo de vida |
+| Cobertura insuficiente | Faltaban casos de interfaz, entrenamiento y errores | Ampliación hasta 33 pruebas aprobadas |
+| Fallo en un mensaje de Streamlit | Una tilde estaba mal codificada en la comprobación | Corrección del texto y repetición de las pruebas |
+
+Las primeras ejecuciones de Actions quedaron en cola y no permitían cancelarse. La página de estado consultada mostraba una incidencia del servicio; después hubo ejecuciones satisfactorias. Este episodio no se atribuye al modelo.
+
+### Dónde revisar y repetir las evidencias
+
+| Evidencia | Ubicación |
+|---|---|
+| Carga, tipos de datos, nulos y gráficos | Notebooks de `mlops_pipeline` |
+| Comparación de modelos | `comparacion_modelos.csv` y `comparacion_f1.png` |
+| Desempeño final | `metricas_prueba.json` y `matriz_confusion_prueba.png` |
+| Métricas de drift | `reporte_drift.csv`, Streamlit y SQLite local |
+| Reglas temporales | `analizar_evolucion` en `model_monitoring.py` y sus pruebas |
+| Validación automatizada | `test_proyecto.py` y registros de [GitHub Actions](https://github.com/xALEJOXx/Repositorio-base-/actions) |
+| Calidad estática | [Panel de SonarCloud](https://sonarcloud.io/dashboard?id=xALEJOXx_Repositorio-base) |
+| Estado del servicio | `/health`, Swagger y registros de Docker |
+
+Repetir las pruebas desde PowerShell sin abrir ventanas de gráficos:
+
+```powershell
+$env:MPLBACKEND = "Agg"
+.\.venv\Scripts\python.exe -m pytest test_proyecto.py -v --cov --cov-report=term-missing --cov-report=xml:coverage.xml
+```
+
+Comprobar el contenedor de prueba:
+
+```powershell
+docker ps --filter "name=creditos-api-prueba"
+docker logs --tail 30 creditos-api-prueba
+Invoke-RestMethod http://127.0.0.1:8002/health
+```
+
+El contenedor de prueba fue observado en estado `healthy` y sus registros mostraron `GET /health` con respuesta 200. Debe volver a comprobarse al iniciar la demostración.
+
+## Balance de la entrega
+
+Se implementó el recorrido desde la carga y exploración hasta la predicción por lotes, Streamlit, monitoreo, persistencia, Docker y controles automáticos de código. El monitoreo periódico y las recomendaciones ante alertas están implementados.
+
+Jenkins no se implementó. En la guía corresponde al componente adicional; GitHub Actions no se presenta como una implementación de Jenkins. También debe comprobarse el acceso del docente `juanseparracourses` al repositorio según las instrucciones del taller.
+
+La principal limitación es el desempeño de la clase minoritaria. Antes de utilizar el modelo en decisiones reales se requiere confirmar la definición del objetivo, revisar los datos, mejorar la detección y validar con información temporal y de negocio. Aprobar las pruebas de software y el Quality Gate no sustituye esa evaluación.
